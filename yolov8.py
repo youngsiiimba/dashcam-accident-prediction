@@ -39,6 +39,26 @@ def preprocess(im, imgsz=640, model_stride=32, model_pt=True):
   im /= 255  # 0 - 255 to 0.0 - 1.0
   return im
 
+def preprocess_video(video_file, imgsz=640, model_stride=32, model_pt=True):
+  cap = cv2.VideoCapture(video_file)
+  frames = []
+  while cap.isOpened():
+      ret, frame = cap.read()
+      if not ret:
+          break
+      # Convert frame to RGB
+      frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+      # Preprocess frame
+      frame = compute_transform(frame, new_shape=imgsz, auto=model_pt, stride=model_stride)
+      # Convert to tensor and append to frames list
+      frames.append(Tensor(frame))
+  cap.release()
+  # Stack frames along the batch dimension
+  frames = Tensor.stack(frames)
+  # Convert from BGR to RGB and normalize
+  frames = frames[..., ::-1].permute(0, 3, 1, 2) / 255.0
+  return frames
+
 # Post Processing functions
 def box_area(box):
   return (box[:, 2] - box[:, 0]) * (box[:, 3] - box[:, 1])
@@ -392,21 +412,23 @@ if __name__ == '__main__':
     print("Error: Image URL or path not provided.")
     sys.exit(1)
 
-  img_path = sys.argv[1]
-  yolo_variant = sys.argv[2] if len(sys.argv) >= 3 else (print("No variant given, so choosing 'n' as the default. Yolov8 has different variants, you can choose from ['n', 's', 'm', 'l', 'x']") or 'n')
+  # img_path = sys.argv[1]
+  vid_path = sys.argv[1]
+  # yolo_variant = sys.argv[2] if len(sys.argv) >= 3 else (print("No variant given, so choosing 'n' as the default. Yolov8 has different variants, you can choose from ['n', 's', 'm', 'l', 'x']") or 'n')
+  yolo_variant = 'n'
   print(f'running inference for YOLO version {yolo_variant}')
 
-  output_folder_path = Path('./outputs_yolov8')
-  output_folder_path.mkdir(parents=True, exist_ok=True)
+  # output_folder_path = Path('./outputs_yolov8')
+  # output_folder_path.mkdir(parents=True, exist_ok=True)
   #absolute image path or URL
-  image_location = [np.frombuffer(fetch(img_path).read_bytes(), np.uint8)]
-  image = [cv2.imdecode(image_location[0], 1)]
-  out_paths = [(output_folder_path / f"{Path(img_path).stem}_output{Path(img_path).suffix}").as_posix()]
-  if not isinstance(image[0], np.ndarray):
-    print('Error in image loading. Check your image file.')
-    sys.exit(1)
-  pre_processed_image = preprocess(image)
-
+  # image_location = [np.frombuffer(fetch(img_path).read_bytes(), np.uint8)]
+  # image = [cv2.imdecode(image_location[0], 1)]
+  # out_paths = [(output_folder_path / f"{Path(img_path).stem}_output{Path(img_path).suffix}").as_posix()]
+  # if not isinstance(image[0], np.ndarray):
+  #   print('Error in image loading. Check your image file.')
+  #   sys.exit(1)
+  # pre_processed_image = preprocess(image)
+  pre_processed_video = preprocess_video(vid_path)
   # Different YOLOv8 variants use different w , r, and d multiples. For a list , refer to this yaml file (the scales section) https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/v8/yolov8.yaml
   depth, width, ratio = get_variant_multiples(yolo_variant)
   yolo_infer = YOLOv8(w=width, r=ratio, d=depth, num_classes=80)
@@ -414,16 +436,23 @@ if __name__ == '__main__':
   state_dict = safe_load(fetch(f'https://gitlab.com/r3sist/yolov8_weights/-/raw/master/yolov8{yolo_variant}.safetensors'))
   load_state_dict(yolo_infer, state_dict)
 
+  # st = time.time()
+  # predictions = yolo_infer(pre_processed_image)
+  # print(f'did inference in {int(round(((time.time() - st) * 1000)))}ms')
   st = time.time()
-  predictions = yolo_infer(pre_processed_image)
+  for idx, frame in enumerate(pre_processed_video):
+    # Add an extra dimension to the frame
+    frame_with_batch = frame.unsqueeze(0)
+    predictions = yolo_infer(frame_with_batch)
+    print(predictions)
+    # Do something with the frame
+    # print(f"Frame {idx + 1}: Shape {frame_with_batch.shape}")
   print(f'did inference in {int(round(((time.time() - st) * 1000)))}ms')
-
-  post_predictions = postprocess(preds=predictions, img=pre_processed_image, orig_imgs=image)
-
+  # post_predictions = postprocess(preds=predictions, img=pre_processed_image, orig_imgs=image)
   #v8 and v3 have same 80 class names for Object Detection
-  class_labels = fetch('https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names').read_text().split("\n")
+  # class_labels = fetch('https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names').read_text().split("\n")
 
-  draw_bounding_boxes_and_save(orig_img_paths=image_location, output_img_paths=out_paths, all_predictions=post_predictions, class_labels=class_labels)
+  # draw_bounding_boxes_and_save(orig_img_paths=image_location, output_img_paths=out_paths, all_predictions=post_predictions, class_labels=class_labels)
 
 # TODO for later:
 #  1. Fix SPPF minor difference due to maxpool
