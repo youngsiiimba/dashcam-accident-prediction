@@ -405,18 +405,40 @@ class YOLOv8:
     yolov8_head_weights = [(22, self.head)]
     return [*zip(backbone_modules, self.net.return_modules()), *zip(yolov8neck_modules, self.fpn.return_modules()), *yolov8_head_weights]
 
-if __name__ == '__main__':
 
+
+def infer_on_video(vid_path):
+  pre_processed_video = preprocess_video(vid_path) 
+  all_preds = []
+  for idx, frame in enumerate(pre_processed_video):
+    # Add an extra dimension to the frame
+    frame_with_batch = frame.unsqueeze(0)
+    predictions = yolo_infer(frame_with_batch)
+    all_preds.append(predictions)
+    # print(predictions)
+    # Do something with the frame
+    # print(f"Frame {idx + 1}: Shape {frame_with_batch.shape}")
+  all_preds = Tensor.stack(all_preds)
+  return all_preds
+
+if __name__ == '__main__':
+  import os
+  from tqdm import tqdm
+  base_dir = "videos/training"
+
+  # Define the folders containing positive and negative videos
+  positive_folder = os.path.join(base_dir, "positive")
+  negative_folder = os.path.join(base_dir, "negative")
   # usage : python3 yolov8.py "image_URL OR image_path" "v8 variant" (optional, n is default)
-  if len(sys.argv) < 2:
-    print("Error: Image URL or path not provided.")
-    sys.exit(1)
+  # if len(sys.argv) < 2:
+  #   print("Error: Image URL or path not provided.")
+  #   sys.exit(1)
 
   # img_path = sys.argv[1]
-  vid_path = sys.argv[1]
+  # vid_path = sys.argv[1]
   # yolo_variant = sys.argv[2] if len(sys.argv) >= 3 else (print("No variant given, so choosing 'n' as the default. Yolov8 has different variants, you can choose from ['n', 's', 'm', 'l', 'x']") or 'n')
   yolo_variant = 'n'
-  print(f'running inference for YOLO version {yolo_variant}')
+  # print(f'running inference for YOLO version {yolo_variant}')
 
   # output_folder_path = Path('./outputs_yolov8')
   # output_folder_path.mkdir(parents=True, exist_ok=True)
@@ -428,7 +450,7 @@ if __name__ == '__main__':
   #   print('Error in image loading. Check your image file.')
   #   sys.exit(1)
   # pre_processed_image = preprocess(image)
-  pre_processed_video = preprocess_video(vid_path)
+  # pre_processed_video = preprocess_video(vid_path)
   # Different YOLOv8 variants use different w , r, and d multiples. For a list , refer to this yaml file (the scales section) https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/v8/yolov8.yaml
   depth, width, ratio = get_variant_multiples(yolo_variant)
   yolo_infer = YOLOv8(w=width, r=ratio, d=depth, num_classes=80)
@@ -436,18 +458,54 @@ if __name__ == '__main__':
   state_dict = safe_load(fetch(f'https://gitlab.com/r3sist/yolov8_weights/-/raw/master/yolov8{yolo_variant}.safetensors'))
   load_state_dict(yolo_infer, state_dict)
 
+  ##################### #################
+  # Dictionary to store predictions for each video
+  all_predictions = {}
+
+  # Iterate over positive videos
+  print("Processing positive videos...")
+  for positive_video in tqdm(os.listdir(positive_folder)):
+      video_path = os.path.join(positive_folder, positive_video)
+      if os.path.isfile(video_path) and video_path.endswith(".mp4"):
+          predictions = infer_on_video(video_path)
+          all_predictions[positive_video] = predictions
+
+  # Iterate over negative videos
+  print("Processing negative videos...")
+  for negative_video in tqdm(os.listdir(negative_folder)):
+      video_path = os.path.join(negative_folder, negative_video)
+      if os.path.isfile(video_path) and video_path.endswith(".mp4"):
+          predictions = infer_on_video(video_path)
+          all_predictions[negative_video] = predictions
+  
+  # Save all predictions to a file
+  # output_file = "outputs_yolov8/all_predictions.pth"
+  # import torch
+  # torch.save(all_predictions, output_file)
+  ##################### #################
+
   # st = time.time()
   # predictions = yolo_infer(pre_processed_image)
   # print(f'did inference in {int(round(((time.time() - st) * 1000)))}ms')
-  st = time.time()
-  for idx, frame in enumerate(pre_processed_video):
-    # Add an extra dimension to the frame
-    frame_with_batch = frame.unsqueeze(0)
-    predictions = yolo_infer(frame_with_batch)
-    print(predictions)
-    # Do something with the frame
-    # print(f"Frame {idx + 1}: Shape {frame_with_batch.shape}")
-  print(f'did inference in {int(round(((time.time() - st) * 1000)))}ms')
+
+########################
+  # st = time.time()
+  # all_preds = []
+  # for idx, frame in enumerate(pre_processed_video):
+  #   # Add an extra dimension to the frame
+  #   frame_with_batch = frame.unsqueeze(0)
+  #   predictions = yolo_infer(frame_with_batch)
+  #   all_preds.append(predictions)
+  #   print(predictions)
+  #   # Do something with the frame
+  #   # print(f"Frame {idx + 1}: Shape {frame_with_batch.shape}")
+  # print(f'did inference in {int(round(((time.time() - st) * 1000)))}ms')
+  # all_preds = Tensor.stack(all_preds)
+########################  
+
+
+
+
   # post_predictions = postprocess(preds=predictions, img=pre_processed_image, orig_imgs=image)
   #v8 and v3 have same 80 class names for Object Detection
   # class_labels = fetch('https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names').read_text().split("\n")
