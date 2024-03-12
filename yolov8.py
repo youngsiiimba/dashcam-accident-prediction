@@ -414,9 +414,9 @@ def infer_on_video(vid_path):
     # Add an extra dimension to the frame
     frame_with_batch = frame.unsqueeze(0)
     predictions = yolo_infer(frame_with_batch)
+    # predictions = predictions.numpy()
     all_preds.append(predictions)
     # print(predictions)
-    # Do something with the frame
     # print(f"Frame {idx + 1}: Shape {frame_with_batch.shape}")
   all_preds = Tensor.stack(all_preds)
   return all_preds
@@ -478,11 +478,12 @@ if __name__ == '__main__':
           predictions = infer_on_video(video_path)
           all_predictions[negative_video] = predictions
   
-  # Save all predictions to a file
-  # output_file = "outputs_yolov8/all_predictions.pth"
-  # import torch
-  # torch.save(all_predictions, output_file)
-  ##################### #################
+  import pickle
+
+  # Save all predictions to a file using pickle
+  output_file = "all_predictions.pkl"
+  with open(output_file, "wb") as f:
+      pickle.dump(all_predictions, f)  ##################### #################
 
   # st = time.time()
   # predictions = yolo_infer(pre_processed_image)
